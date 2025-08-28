@@ -1,0 +1,48 @@
+name: 🐞 Bug Report
+description: Report a bug in the TLF Packager GUI
+title: "[BUG] "
+labels: [bug]
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Provide a clear and concise description of the bug.
+      placeholder: "When I click Pack & TOC, the app crashes."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce the bug?
+      placeholder: "1. Go to ...\n2. Click on ...\n3. See error"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: "The PDF should be generated without errors."
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: "Your setup details"
+      placeholder: "OS: Windows 11, Python 3.11, PyQt5 5.15.10"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other details, logs, or screenshots that may help us.
+      placeholder: "Attach logs or screenshots here"
