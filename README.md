@@ -2,7 +2,7 @@
 
 **GUI Tool for Packaging Clinical Trial Outputs (Tables, Listings, Figures)**  
 
-The **TLF Packager GUI** is a Python + PyQt5 based tool that scans **RTF, DOCX, and PDF** output files from clinical trials, extracts **TLF titles**, and provides an interactive interface for reviewing, filtering, reordering, and packaging outputs. It generates a **final bookmarked PDF** with an **advanced, clickable Table of Contents (TOC)**, making submission deliverables easier to navigate and review.  
+The **TLF Packager GUI** is a Python + PyQt5 based tool that scans **RTF, DOCX, and PDF** output files from clinical trials, extracts **TLF titles**, and provides an interactive interface for reviewing, filtering, reordering, and packaging outputs. It generates a **final bookmarked PDF** with an **advanced, clickable Table of Contents (TOC)**, making submission deliverables easier to navigate and review completely.  
 
 
 ## ✨ Key Features
