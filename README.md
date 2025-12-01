@@ -1,88 +1,166 @@
-# 📦 TLF Packager GUI  
+# Veristat TLF Packager (GUI Tool)
 
-**GUI Tool for Packaging Clinical Trial Outputs (Tables, Listings, Figures)**  
+This repository contains the GUI version of the Veristat TLF Packager.  
+It allows users to load a folder containing RTF, DOCX, and PDF files,  
+extract TLF titles, reorder outputs, convert to PDF using Microsoft Word,  
+and generate a single bookmarked PDF with an automatically generated  
+multi-page clickable Table of Contents (TOC).
 
-The **TLF Packager GUI** is a Python + PyQt5 based tool that scans **RTF, DOCX, and PDF** output files from clinical trials, extracts **TLF titles**, and provides an interactive interface for reviewing, filtering, reordering, and packaging outputs. It generates a **final bookmarked PDF** with an **advanced, clickable Table of Contents (TOC)**, making submission deliverables easier to navigate and review completely.  
+The packaged GUI application is created using PyInstaller.  
+The final EXE file is not uploaded here due to GitHub file size limits.
 
+-----------------------------------------------------------------------
+## Folder Structure
 
-## ✨ Key Features
-- 🔍 **Automatic Title Extraction**  
-  - RTF → from headers  
-  - DOCX → from headers/body  
-  - PDF → from first page  
-- 🖥️ **Interactive GUI**  
-  - Browse & load a folder of TLF outputs  
-  - Search/filter dynamically across all columns  
-  - Select/Deselect outputs with one click  
-  - Reorder with **Move Up / Move Down** buttons  
-  - Edit bookmark text inline (double-click to edit)  
-- 📑 **Export to Excel** – output details & bookmarks saved for documentation or review  
-- 📄 **RTF/DOCX ➜ PDF Conversion** using Microsoft Word (`pywin32`)  
-- 📘 **Final Packaged PDF**  
-  - Includes bookmarks for each output  
-  - Optionally inserts a **multi-page clickable TOC** with dot leaders  
-- ✅ **Terminate Button** for emergency stop during long runs  
-- 🎨 Modern, polished **PyQt5 GUI design** with auto-refresh  
+The repository uses the following structure:
 
----
+```
+Veristat_TLF_Packager_GUI/
+    README.md
+    SRC/
+        Veristat_TLF_Packager.py
+        app.ico
+    build/
+        how_to_build_exe.md
+```
 
-## 🚀 Getting Started
+Notes:
+1. The EXE is not included. You can build it using PyInstaller as described later.
+2. The SRC folder contains the Python source file and the icon file.
+3. The build folder contains detailed steps to generate the EXE.
 
-### 1. Clone the Repository
-<pre>
-git clone https://github.com/&lt;your-username&gt;/TLF_Packager_GUI.git
-cd TLF_Packager_GUI
-</pre>
+-----------------------------------------------------------------------
+## Purpose of the Tool
 
-### 2. Install Requirements
-The script will auto-install missing packages in **user mode**, but you can also install them manually:  
-<pre>
-pip install openpyxl python-docx PyMuPDF PyQt5 pywin32
-</pre>
+This GUI tool provides an interactive interface to:
 
-### 3. Run the Application
-<pre>
+1. Scan RTF, DOCX, and PDF files inside a folder.
+2. Extract TLF titles:
+   - RTF: From header and first content lines.
+   - DOCX: From header and body paragraphs.
+   - PDF: From page 1.
+3. Display all extracted titles in a table.
+4. Allow the user to:
+   - Select or deselect files for packaging.
+   - Edit bookmark names.
+   - Reorder files (Move Up / Move Down).
+   - Filter rows by search text.
+5. Convert RTF and DOCX to PDF using Microsoft Word.
+6. Merge selected PDFs into a final bookmarked PDF.
+7. Generate a multi-page clickable Table of Contents (TOC).
+8. Export table information to Excel.
+9. Refresh automatically every 3 seconds to detect new files.
+10. Terminate processing at any point using the Terminate button.
+
+-----------------------------------------------------------------------
+## System Requirements
+
+The GUI requires the following:
+
+- Windows OS
+- Python 3.10 or above
+- Microsoft Word installed (for RTF/DOCX to PDF conversion)
+- Required Python libraries:
+  - PyQt5
+  - PyMuPDF (fitz)
+  - python-docx
+  - openpyxl
+  - pywin32
+
+-----------------------------------------------------------------------
+## How to Run the GUI (Direct Python Execution)
+
+If you want to run directly from the .py file:
+
+```
+cd Veristat_TLF_Packager_GUI/SRC
 python Veristat_TLF_Packager.py
-</pre>
+```
 
----
+This will open the GUI window.
 
-## 📂 Example Workflow
-1. Launch the GUI (`python Veristat_TLF_Packager.py`).  
-2. Browse to a folder containing **RTF/DOCX/PDF** files.  
-3. Review extracted titles in the GUI.  
-4. Reorder files, edit bookmarks, or deselect unnecessary outputs.  
-5. Export bookmarks to Excel (optional).  
-6. Click **Pack & TOC** to generate the final bookmarked PDF.  
+-----------------------------------------------------------------------
+## How to Build the EXE (PyInstaller)
 
----
+Because the EXE file cannot be uploaded to GitHub due to size limits,  
+you can generate it yourself using the following steps.
 
-## ⚙️ Dependencies
-- **Python 3.x**  
-- [openpyxl](https://pypi.org/project/openpyxl/)  
-- [python-docx](https://pypi.org/project/python-docx/)  
-- [PyMuPDF (fitz)](https://pymupdf.readthedocs.io/)  
-- [PyQt5](https://pypi.org/project/PyQt5/)  
-- [pywin32](https://pypi.org/project/pywin32/) (requires Microsoft Word installed for RTF/DOCX ➜ PDF conversion)  
+1. Install PyInstaller:
 
----
+```
+pip install pyinstaller
+```
 
+2. Navigate to the SRC folder:
 
-## 🛠 Development Notes
-- Designed for **clinical trial programming workflows**.  
-- Packaged PDF is **submission-ready**, with navigable bookmarks and TOC.  
-- Auto-refresh detects new files in the folder every 3 seconds.  
-- All logs are displayed in a scrollable log box for traceability.  
+```
+cd Veristat_TLF_Packager_GUI/SRC
+```
 
----
+3. Build the EXE:
 
-## 📧 Contact
-Developed by **Manivannan Mathialagan**  
-📩 manivannan.mathiazhagan@gmail.com  
+```
+pyinstaller --onefile --windowed --icon=app.ico Veristat_TLF_Packager.py
+```
 
-For issues or feature requests, please open a [GitHub Issue](../../issues).  
+4. Output files will appear in the following folders (auto-generated by PyInstaller):
 
----
+```
+dist/                contains the final .exe file
+build/               internal build files
+Veristat_TLF_Packager.spec
+```
 
-## 📜 License
-This project is released under the MIT License. See [LICENSE](LICENSE) for details.
+5. You can then run the packaged EXE from:
+
+```
+dist/Veristat_TLF_Packager.exe
+```
+
+Double-clicking the EXE will open the GUI directly.
+
+-----------------------------------------------------------------------
+## Features of the GUI
+
+Below is the complete list of capabilities:
+
+1. Folder selection via "Browse Folder"
+2. Automatic scanning every 3 seconds
+3. Title extraction:
+   - Title 1
+   - Title 2
+   - Title 3
+   - Bookmark text generation
+4. Include column with checkboxes (select for packaging)
+5. Type detection (RTF, PDF, DOCX)
+6. Editable bookmarks (double-click)
+7. Filtering by search keywords
+8. Move Up / Move Down row reordering
+9. Export to Excel (TLF_Bookmarks.xlsx)
+10. Convert to PDF (RTF/DOCX -> PDF via Microsoft Word)
+11. Pack and TOC:
+    - Merge files
+    - Add bookmarks
+    - Insert multi-page clickable TOC
+12. Auto-naming of output PDF with timestamps
+13. Versioning (auto-append _v2, _v3 if file exists)
+14. Log panel with live updates
+15. Terminate button for force-stop
+
+-----------------------------------------------------------------------
+## Important Notes
+
+1. The EXE file is not included due to GitHub file size limitations.
+2. The GUI relies on Microsoft Word for RTF/DOCX conversion.
+3. All dependencies must be installed before building the EXE.
+4. The icon file app.ico must remain inside the SRC folder.
+
+-----------------------------------------------------------------------
+## Contact
+
+For issues, suggestions, or improvements, contact:
+
+Manivannan Mathialagan  
+manivannan.mathialagan@veristat.com
+
+-----------------------------------------------------------------------
