@@ -1,5 +1,5 @@
 # ****************************************************************************************************
-# Script Name    : TLF_Packager.py
+# Script Name    : Veristat_TLF_Packager.py
 #
 # Purpose        : GUI Tool to scan RTF, DOCX, and PDF files in a folder,
 #                  extract TLF titles (from RTF: header/first lines, DOCX: header/body, PDF: page 1),
@@ -30,7 +30,7 @@
 # Notes:
 #   - Requires Python 3, openpyxl, PyMuPDF (fitz), PyQt5, pywin32, python-docx
 #   - Requires Microsoft Word installed for RTF/DOCX to PDF conversion (via pywin32)
-#   - For any issues or suggestions, contact manivannan.mathiazhagan@gmail.com
+#   - For any issues or suggestions, contact manivannan.mathialagan@veristat.com
 # ****************************************************************************************************
 
 import sys
@@ -112,42 +112,133 @@ def extract_header_lines_with_tablepattern(rtf_path):
         return lines
     except Exception:
         return []
-    
-# Heuristic filter to accept/reject a line as a plausible title
-def valid_title_candidate(candidate):
-    c = candidate.strip()
-    if not c: return False
-    if c.lower().startswith("note:"): return False
-    if c.count('.') > 1: return False
-    if re.search(r'\[\d+\]', c): return False
-    if re.match(r'^\\?\*.*$', c): return False
-    if re.match(r'^[A-Z0-9\\\*]+$', c): return False
-    return True
 
 # Remove trailing "Note:" segments from a line
 def filter_note_from_line(text):
     return re.split(r'\bNote\s*:', text, flags=re.IGNORECASE)[0].strip()
 
+# Detect if text is likely footer content
+def is_footer_content(text):
+    """Detect if text is likely footer content"""
+    text_lower = text.lower().strip()
+    
+    # Common footer patterns
+    footer_patterns = [
+        r'page\s+\d+',                          # Page numbers
+        r'\d+\s+of\s+\d+',                      # Page x of y
+        r'confidential',                        # Confidentiality statements
+        r'proprietary',
+        r'draft',
+        r'final',
+        r'version\s+[\d\.]+',                   # Version numbers
+        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',      # Dates
+        r'^\d+$',                               # Just numbers
+        r'file\s*name\s*:',                     # File metadata
+        r'^[a-z]:\\',                           # File paths (Windows)
+        r'^/[a-z]',                             # File paths (Unix)
+        r'author\s*:',
+        r'date\s*:',
+        r'time\s*:',
+        r'printed\s+on',
+        r'generated\s+on',
+        r'last\s+modified',
+        r'©',                                   # Copyright
+        r'copyright',
+        r'all\s+rights\s+reserved',
+        r'sponsor',
+        r'protocol\s+number',
+        r'study\s+code',
+        r'cdisc',
+        r'sas\s+output',
+        r'program\s*:',
+        r'output\s*:',
+    ]
+    
+    # Check against patterns
+    for pattern in footer_patterns:
+        if re.search(pattern, text_lower):
+            return True
+    
+    # Additional checks
+    if len(text.strip()) < 3:  # Too short
+        return True
+    
+    if text.strip().count(' ') == 0 and len(text.strip()) > 30:  # Long single word (likely path)
+        return True
+    
+    # Check if mostly numbers and special characters
+    alpha_count = sum(1 for ch in text if ch.isalpha())
+    if len(text) > 8 and alpha_count < 3:  # Less than 3 letters in a longer string
+        return True
+        
+    return False
+
+# Heuristic filter to accept/reject a line as a plausible title
+def valid_title_candidate(candidate):
+    """Heuristic filter to accept/reject a line as a plausible title"""
+    c = candidate.strip()
+    
+    if not c: 
+        return False
+    
+    # Use footer detection
+    if is_footer_content(c):
+        return False
+        
+    if c.lower().startswith("note:"): 
+        return False
+    
+    if c.count('.') > 2:  # Likely a file path or version number
+        return False
+    
+    if re.search(r'\[\d+\]', c):  # Reference numbers
+        return False
+    
+    if re.match(r'^\\?\*.*$', c):  # Control characters
+        return False
+    
+    if re.match(r'^[A-Z0-9\\\*]+$', c):  # All caps/numbers
+        return False
+    
+    # Exclude lines that are mostly numbers/special chars
+    alpha_count = sum(1 for ch in c if ch.isalpha())
+    if len(c) > 5 and alpha_count / len(c) < 0.3:
+        return False
+        
+    return True
+
 # Parse RTF header lines to find Title1/2/3 and build a bookmark
 def extract_titles_from_rtf(rtf_path):
+    """Parse RTF header lines to find Title1/2/3 and build a bookmark"""
     header_lines = extract_header_lines_with_tablepattern(rtf_path)
+    
+    # Filter out footer content early
+    header_lines = [line for line in header_lines if not is_footer_content(line)]
+    
     title1, title2, title3 = "", "", ""
     bookmark = ""
     title_pattern = r'(?:(Table|Listing|Figure)\s+)?(Appendix)\s+\d+(?:\.\d+)*[A-Za-z0-9]*|(Table|Listing|Figure)\s+\d+(?:\.\d+)*[A-Za-z0-9]*'
+    
     for i, line in enumerate(header_lines):
         match = re.search(title_pattern, line, re.IGNORECASE)
         if match:
             title1 = match.group(0).strip()
             remainder = line[len(match.group(0)):].strip(" :–-")
             remainder = filter_note_from_line(remainder)
-            if remainder and valid_title_candidate(remainder): title2 = remainder
+            if remainder and valid_title_candidate(remainder): 
+                title2 = remainder
             if not title2 and i+1 < len(header_lines):
-                t2 = header_lines[i+1]; t2_clean = filter_note_from_line(t2)
-                if valid_title_candidate(t2_clean): title2 = t2_clean.strip()
+                t2 = header_lines[i+1]
+                t2_clean = filter_note_from_line(t2)
+                if valid_title_candidate(t2_clean): 
+                    title2 = t2_clean.strip()
             if i+2 < len(header_lines):
-                t3 = header_lines[i+2]; t3_clean = filter_note_from_line(t3)
-                if valid_title_candidate(t3_clean): title3 = t3_clean.strip()
+                t3 = header_lines[i+2]
+                t3_clean = filter_note_from_line(t3)
+                if valid_title_candidate(t3_clean): 
+                    title3 = t3_clean.strip()
             break
+    
     if title1:
         bookmark = title1
         if title2: bookmark += ": " + title2
@@ -195,6 +286,7 @@ def extract_title_from_pdf(pdf_path):
 
 # Inspect DOCX header/body to find Title1/2/3 and build a bookmark
 def extract_title_from_docx(docx_path):
+    """Inspect DOCX header/body to find Title1/2/3 and build a bookmark"""
     title_pattern = r'(?:(Table|Listing|Figure)\s+)?(Appendix)\s+\d+(?:\.\d+)*[A-Za-z0-9]*|(Table|Listing|Figure)\s+\d+(?:\.\d+)*[A-Za-z0-9]*'
     try:
         doc = docx.Document(docx_path)
@@ -204,6 +296,10 @@ def extract_title_from_docx(docx_path):
                 line = h_para.text.strip()
                 if line:
                     paras.append(line)
+        
+        # Filter out footer content
+        paras = [p for p in paras if not is_footer_content(p)]
+        
         title1 = title2 = title3 = ""
         for idx, line in enumerate(paras[:10]):
             match = re.match(title_pattern, line, re.IGNORECASE)
@@ -226,6 +322,10 @@ def extract_title_from_docx(docx_path):
                     for cell in row.cells:
                         cell_text = cell.text.strip()
                         if cell_text: body_paras.append(cell_text)
+            
+            # Filter out footer content from body
+            body_paras = [p for p in body_paras if not is_footer_content(p)]
+            
             for idx, line in enumerate(body_paras[:15]):
                 match = re.match(title_pattern, line, re.IGNORECASE)
                 if match:
@@ -457,7 +557,7 @@ class TLFApp(QtWidgets.QWidget):
         if os.path.exists(icon_path):
             self.setWindowIcon(QtGui.QIcon(icon_path))
 
-        self.setWindowTitle("TLF Packager")
+        self.setWindowTitle("Veristat TLF Packager")
         self.setStyleSheet("background-color: #f4f4f4; border-radius: 14px;")
         self.resize(1280, 720)
         font_main = QtGui.QFont("Times New Roman", 12)
@@ -476,14 +576,14 @@ class TLFApp(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
 
-        header = QtWidgets.QLabel("TLF Packager")
+        header = QtWidgets.QLabel("Veristat TLF Packager")
         header.setFont(font_header)
         header.setAlignment(QtCore.Qt.AlignCenter)
         header.setStyleSheet("color: black; background: #b3e3e7; padding: 14px 0 10px 0; border-radius: 18px;")
         layout.addWidget(header)
 
         query = QtWidgets.QLabel(
-            "• For any queries, issues faced, or if you have ideas for improvement,\n  please contact Manivannan (manivannan.mathiazhagan@gmail.com)"
+            "• For any queries, issues faced, or if you have ideas for improvement,\n  please contact Manivannan (manivannan.mathialagan@veristat.com)"
         )
         query.setFont(font_main)
         query.setStyleSheet("background: #f4f4f4; color: #222;")
@@ -626,8 +726,8 @@ class TLFApp(QtWidgets.QWidget):
         self.export_btn.setToolTip("Export the current table (with bookmarks) to an Excel file.")
         self.up_btn.setToolTip("Move selected row up in the order.")
         self.down_btn.setToolTip("Move selected row down in the order.")
-        self.convert_btn.setToolTip("Convert selected RTF/DOCX files to PDF using MS Word.")
-        self.pack_btn.setToolTip("Merge all selected files into a final bookmarked PDF.\nIncludes a Table of Contents if enabled.")
+        self.convert_btn.setToolTip("Convert selected RTF/DOCX files to PDF using MS Word.\n(Optional - Pack & TOC will auto-convert if needed)")
+        self.pack_btn.setToolTip("ONE-CLICK: Auto-converts RTF/DOCX, merges all PDFs, adds bookmarks & TOC.\nNo need to convert separately!")
         self.terminate_btn.setToolTip("Force quit the application immediately.")
 
         # === Output File Field ===
@@ -966,7 +1066,7 @@ class TLFApp(QtWidgets.QWidget):
                 page_count = 0
                 for idx, row in enumerate(files_to_pack):
                     ftype, fname, t1, t2, t3, bm = row[1:]
-                    self.thread_safe_log(f"[{idx+1}/{len(files_to_pack)}] Adding: {fname} ({ftype})")
+                    self.thread_safe_log(f"[{idx+1}/{len(files_to_pack)}] Processing: {fname}")
                     file_path = os.path.join(self.out_folder, fname)
                     if ftype in ['RTF', 'DOCX']:
                         pdf_path = convert_to_pdf_with_word(file_path, self.out_folder)
