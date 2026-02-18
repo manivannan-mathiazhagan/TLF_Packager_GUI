@@ -1,36 +1,20 @@
 # ****************************************************************************************************
 # Script Name    : Veristat_TLF_Packager.py
 #
-# Purpose        : GUI Tool to scan RTF, DOCX, and PDF files in a folder,
-#                  extract TLF titles (from RTF: header/first lines, DOCX: header/body, PDF: page 1),
+# Purpose        : GUI Tool to scan RTF, DOCX, DOC and PDF files in a folder,
+#                  extract TLF titles (from RTF: header/first lines, DOCX: header/body,
+#                  DOC: header/table/body via MS Word read-only, PDF: page 1),
 #                  display for user review, filter, reorder (move up/down), and export details to Excel.
-#                  Users can convert RTF/DOCX files to PDF (via Microsoft Word),
+#                  Users can convert RTF/DOC/DOCX files to PDF (via Microsoft Word),
 #                  and generate a single bookmarked PDF with advanced, clickable Table of Contents.
 #
 # Author         : Manivannan Mathialagan
 #
 # Created On     : 22-May-2025
 #
-# Key Parameters (GUI-based):
-#   - Folder Selection         : User selects the folder containing RTF, DOCX, and PDF files.
-#   - Output PDF Name          : User specifies the name for the merged PDF.
-#
-# Key Features:
-#   - Extracts and displays TLF titles from headers/bodies of RTF, DOCX, and first page of PDF.
-#   - Allows user to filter, select, and reorder outputs for packaging.
-#   - Bookmark/Include columns are interactive; Bookmark is editable.
-#   - Exports details and custom order to Excel for documentation or further review.
-#   - Converts RTF/DOCX to PDF using Microsoft Word (requires pywin32).
-#   - Generates a merged PDF with bookmarks and advanced, wrapped, clickable Table of Contents (TOC).
-#
-# Example Usage:
-#   - Run the script: python TLF_Packager.py
-#   - Use the GUI to select folder, review/reorder files, and generate outputs.
-#
 # Notes:
 #   - Requires Python 3, openpyxl, PyMuPDF (fitz), PyQt5, pywin32, python-docx
-#   - Requires Microsoft Word installed for RTF/DOCX to PDF conversion (via pywin32)
-#   - For any issues or suggestions, contact manivannan.mathialagan@veristat.com
+#   - Requires Microsoft Word installed for DOC/RTF/DOCX reading & conversion (via pywin32)
 # ****************************************************************************************************
 
 import sys
@@ -121,28 +105,27 @@ def filter_note_from_line(text):
 def is_footer_content(text):
     """Detect if text is likely footer content"""
     text_lower = text.lower().strip()
-    
-    # Common footer patterns
+
     footer_patterns = [
-        r'page\s+\d+',                          # Page numbers
-        r'\d+\s+of\s+\d+',                      # Page x of y
-        r'confidential',                        # Confidentiality statements
+        r'page\s+\d+',
+        r'\d+\s+of\s+\d+',
+        r'confidential',
         r'proprietary',
         r'draft',
         r'final',
-        r'version\s+[\d\.]+',                   # Version numbers
-        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',      # Dates
-        r'^\d+$',                               # Just numbers
-        r'file\s*name\s*:',                     # File metadata
-        r'^[a-z]:\\',                           # File paths (Windows)
-        r'^/[a-z]',                             # File paths (Unix)
+        r'version\s+[\d\.]+',
+        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',
+        r'^\d+$',
+        r'file\s*name\s*:',
+        r'^[a-z]:\\',
+        r'^/[a-z]',
         r'author\s*:',
         r'date\s*:',
         r'time\s*:',
         r'printed\s+on',
         r'generated\s+on',
         r'last\s+modified',
-        r'©',                                   # Copyright
+        r'©',
         r'copyright',
         r'all\s+rights\s+reserved',
         r'sponsor',
@@ -153,92 +136,71 @@ def is_footer_content(text):
         r'program\s*:',
         r'output\s*:',
     ]
-    
-    # Check against patterns
+
     for pattern in footer_patterns:
         if re.search(pattern, text_lower):
             return True
-    
-    # Additional checks
-    if len(text.strip()) < 3:  # Too short
+
+    if len(text.strip()) < 3:
         return True
-    
-    if text.strip().count(' ') == 0 and len(text.strip()) > 30:  # Long single word (likely path)
+
+    if text.strip().count(' ') == 0 and len(text.strip()) > 30:
         return True
-    
-    # Check if mostly numbers and special characters
+
     alpha_count = sum(1 for ch in text if ch.isalpha())
-    if len(text) > 8 and alpha_count < 3:  # Less than 3 letters in a longer string
+    if len(text) > 8 and alpha_count < 3:
         return True
-        
+
     return False
 
-# Heuristic filter to accept/reject a line as a plausible title
 def valid_title_candidate(candidate):
-    """Heuristic filter to accept/reject a line as a plausible title"""
     c = candidate.strip()
-    
-    if not c: 
+    if not c:
         return False
-    
-    # Use footer detection
     if is_footer_content(c):
         return False
-        
-    if c.lower().startswith("note:"): 
+    if c.lower().startswith("note:"):
         return False
-    
-    if c.count('.') > 2:  # Likely a file path or version number
+    if c.count('.') > 2:
         return False
-    
-    if re.search(r'\[\d+\]', c):  # Reference numbers
+    if re.search(r'\[\d+\]', c):
         return False
-    
-    if re.match(r'^\\?\*.*$', c):  # Control characters
+    if re.match(r'^\\?\*.*$', c):
         return False
-    
-    if re.match(r'^[A-Z0-9\\\*]+$', c):  # All caps/numbers
+    if re.match(r'^[A-Z0-9\\\*]+$', c):
         return False
-    
-    # Exclude lines that are mostly numbers/special chars
     alpha_count = sum(1 for ch in c if ch.isalpha())
     if len(c) > 5 and alpha_count / len(c) < 0.3:
         return False
-        
     return True
 
 # Parse RTF header lines to find Title1/2/3 and build a bookmark
 def extract_titles_from_rtf(rtf_path):
-    """Parse RTF header lines to find Title1/2/3 and build a bookmark"""
     header_lines = extract_header_lines_with_tablepattern(rtf_path)
-    
-    # Filter out footer content early
     header_lines = [line for line in header_lines if not is_footer_content(line)]
-    
+
     title1, title2, title3 = "", "", ""
     bookmark = ""
     title_pattern = r'(?:(Table|Listing|Figure)\s+)?(Appendix)\s+\d+(?:\.\d+)*[A-Za-z0-9]*|(Table|Listing|Figure)\s+\d+(?:\.\d+)*[A-Za-z0-9]*'
-    
+
     for i, line in enumerate(header_lines):
         match = re.search(title_pattern, line, re.IGNORECASE)
         if match:
             title1 = match.group(0).strip()
             remainder = line[len(match.group(0)):].strip(" :–-")
             remainder = filter_note_from_line(remainder)
-            if remainder and valid_title_candidate(remainder): 
+            if remainder and valid_title_candidate(remainder):
                 title2 = remainder
             if not title2 and i+1 < len(header_lines):
-                t2 = header_lines[i+1]
-                t2_clean = filter_note_from_line(t2)
-                if valid_title_candidate(t2_clean): 
+                t2_clean = filter_note_from_line(header_lines[i+1])
+                if valid_title_candidate(t2_clean):
                     title2 = t2_clean.strip()
             if i+2 < len(header_lines):
-                t3 = header_lines[i+2]
-                t3_clean = filter_note_from_line(t3)
-                if valid_title_candidate(t3_clean): 
+                t3_clean = filter_note_from_line(header_lines[i+2])
+                if valid_title_candidate(t3_clean):
                     title3 = t3_clean.strip()
             break
-    
+
     if title1:
         bookmark = title1
         if title2: bookmark += ": " + title2
@@ -263,14 +225,14 @@ def extract_title_from_pdf(pdf_path):
                 remainder = filter_note_from_line(remainder)
                 if remainder and valid_title_candidate(remainder): title2 = remainder
                 if not title2 and i+1 < len(lines):
-                    cand2 = lines[i+1]; cand2_clean = filter_note_from_line(cand2)
+                    cand2_clean = filter_note_from_line(lines[i+1])
                     if valid_title_candidate(cand2_clean): title2 = cand2_clean.strip()
                 if i+2 < len(lines):
-                    cand3 = lines[i+2]; cand3_clean = filter_note_from_line(cand3)
+                    cand3_clean = filter_note_from_line(lines[i+2])
                     if valid_title_candidate(cand3_clean): title3 = cand3_clean.strip()
                 break
         if not title1:
-            for idx, line in enumerate(lines[:3]):
+            for line in lines[:3]:
                 if valid_title_candidate(line):
                     if not title1: title1 = filter_note_from_line(line)
                     elif not title2: title2 = filter_note_from_line(line)
@@ -286,7 +248,6 @@ def extract_title_from_pdf(pdf_path):
 
 # Inspect DOCX header/body to find Title1/2/3 and build a bookmark
 def extract_title_from_docx(docx_path):
-    """Inspect DOCX header/body to find Title1/2/3 and build a bookmark"""
     title_pattern = r'(?:(Table|Listing|Figure)\s+)?(Appendix)\s+\d+(?:\.\d+)*[A-Za-z0-9]*|(Table|Listing|Figure)\s+\d+(?:\.\d+)*[A-Za-z0-9]*'
     try:
         doc = docx.Document(docx_path)
@@ -296,10 +257,8 @@ def extract_title_from_docx(docx_path):
                 line = h_para.text.strip()
                 if line:
                     paras.append(line)
-        
-        # Filter out footer content
         paras = [p for p in paras if not is_footer_content(p)]
-        
+
         title1 = title2 = title3 = ""
         for idx, line in enumerate(paras[:10]):
             match = re.match(title_pattern, line, re.IGNORECASE)
@@ -322,10 +281,7 @@ def extract_title_from_docx(docx_path):
                     for cell in row.cells:
                         cell_text = cell.text.strip()
                         if cell_text: body_paras.append(cell_text)
-            
-            # Filter out footer content from body
             body_paras = [p for p in body_paras if not is_footer_content(p)]
-            
             for idx, line in enumerate(body_paras[:15]):
                 match = re.match(title_pattern, line, re.IGNORECASE)
                 if match:
@@ -358,6 +314,122 @@ def extract_title_from_docx(docx_path):
         return title1, title2, title3, bookmark
     except Exception:
         return "", "", "", os.path.basename(docx_path)
+
+# -----------------------------
+# DOC title extraction (NEW)
+# -----------------------------
+def extract_title_from_doc(doc_path):
+    """
+    DOC title extraction using MS Word COM.
+    Reads header tables in order (key for Title2/Title3), then header text, then early body.
+    """
+    title_pattern = r'(?:(Table|Listing|Figure)\s+)?(Appendix)\s+\d+(?:\.\d+)*[A-Za-z0-9]*|(Table|Listing|Figure)\s+\d+(?:\.\d+)*[A-Za-z0-9]*'
+    try:
+        import pythoncom
+        import win32com.client
+
+        pythoncom.CoInitialize()
+        word = win32com.client.Dispatch("Word.Application")
+        word.Visible = False
+        try:
+            word.DisplayAlerts = 0
+        except Exception:
+            pass
+
+        doc = word.Documents.Open(os.path.abspath(doc_path), ReadOnly=True)
+        lines = []
+
+        def _clean_word_text(s):
+            if not s:
+                return ""
+            s = s.replace("\r\x07", "\n").replace("\x07", "\n").replace("\r", "\n")
+            s = s.replace("\t", " ")
+            s = re.sub(r"[ \u00A0]+", " ", s)
+            s = re.sub(r"\n{2,}", "\n", s)
+            return s.strip()
+
+        def _split_lines(s):
+            s = _clean_word_text(s)
+            return [x.strip() for x in s.split("\n") if x.strip()]
+
+        # Header tables + header text
+        for sec_i in range(1, doc.Sections.Count + 1):
+            hdr = doc.Sections(sec_i).Headers(1)  # wdHeaderFooterPrimary
+            rng = hdr.Range
+
+            # tables first
+            try:
+                if rng.Tables.Count > 0:
+                    for t_i in range(1, rng.Tables.Count + 1):
+                        tbl = rng.Tables(t_i)
+                        for r_i in range(1, tbl.Rows.Count + 1):
+                            row = tbl.Rows(r_i)
+                            for c_i in range(1, row.Cells.Count + 1):
+                                lines.extend(_split_lines(row.Cells(c_i).Range.Text))
+            except Exception:
+                pass
+
+            # then normal header text
+            try:
+                lines.extend(_split_lines(rng.Text))
+            except Exception:
+                pass
+
+        # early body
+        try:
+            body_txt = (doc.Content.Text or "")[:12000]
+            lines.extend(_split_lines(body_txt))
+        except Exception:
+            pass
+
+        doc.Close(False)
+        word.Quit()
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+
+        # filter footer-like lines
+        lines = [ln for ln in lines if ln and not is_footer_content(ln)]
+
+        title1 = title2 = title3 = ""
+        for i, line in enumerate(lines[:40]):
+            match = re.search(title_pattern, line, re.IGNORECASE)
+            if match:
+                title1 = match.group(0).strip()
+                remainder = line[len(match.group(0)):].strip(" :–-")
+                remainder = filter_note_from_line(remainder)
+                if remainder and valid_title_candidate(remainder):
+                    title2 = remainder
+                if not title2 and i+1 < len(lines):
+                    cand2_clean = filter_note_from_line(lines[i+1])
+                    if valid_title_candidate(cand2_clean):
+                        title2 = cand2_clean.strip()
+                if i+2 < len(lines):
+                    cand3_clean = filter_note_from_line(lines[i+2])
+                    if valid_title_candidate(cand3_clean):
+                        title3 = cand3_clean.strip()
+                break
+
+        if not title1:
+            for ln in lines[:15]:
+                if valid_title_candidate(ln):
+                    if not title1: title1 = filter_note_from_line(ln)
+                    elif not title2: title2 = filter_note_from_line(ln)
+                    elif not title3: title3 = filter_note_from_line(ln)
+                    if title1 and title2 and title3:
+                        break
+
+        bookmark = title1
+        if title2: bookmark += ": " + title2
+        if title3: bookmark += " - " + title3
+        if not bookmark.strip():
+            bookmark = os.path.basename(doc_path)
+
+        return title1, title2, title3, bookmark
+
+    except Exception:
+        return "", "", "", os.path.basename(doc_path)
 
 # Create a sortable key from a bookmark (Table/Listing/Figure/Appendix order + numbers)
 def parse_sort_key(bookmark):
@@ -394,12 +466,9 @@ def wrap_toc_title(title, font_size, max_width):
 
 # Prepend a multi-page TOC with dot leaders and clickable links to a bookmarked PDF
 def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
-
-    # Convert existing PDF TOC to (level, title, page_index) tuples
     def extract_toc_entries(doc):
         return [(lvl, title.strip(), page_num - 1) for lvl, title, page_num in doc.get_toc(simple=True)]
 
-    # Paginate wrapped TOC lines to fit per-page line capacity
     def paginate_wrapped_entries(toc_entries, font_size, toc_text_max_width, page_height):
         y_spacing = font_size * 1.5
         lines_per_page = int((page_height - 100) // y_spacing) - 2
@@ -419,7 +488,6 @@ def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
             paginated_entries.append(current_page_entries)
         return paginated_entries
 
-    # Draw TOC pages with wrapped titles, dot leaders, and page numbers
     def generate_toc_pages(paginated_entries, font_size, page_width, page_height, toc_page_count,
                            toc_text_max_width, page_number_x, page_number_width, gap, right_margin):
         toc_doc = fitz.open()
@@ -494,7 +562,6 @@ def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
             "page": target_page + toc_page_count
         })
 
-    # Offset original bookmarks to account for inserted TOC pages
     def shift_bookmark_pages(bookmarks, offset):
         return [[lvl, title, page + offset] for lvl, title, page in bookmarks if len([lvl, title, page]) >= 3]
 
@@ -503,7 +570,7 @@ def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
     final.close()
     base.close()
 
-# Write table data (include/type/titles/bookmark/order) to an Excel file
+# Write table data to Excel
 def export_bookmarks_to_excel(table_data, out_path):
     wb = Workbook()
     ws = wb.active
@@ -518,7 +585,7 @@ def export_bookmarks_to_excel(table_data, out_path):
             cell.alignment = openpyxl.styles.Alignment(wrap_text=True, vertical='top')
     wb.save(out_path)
 
-# Use MS Word (COM) to convert RTF/DOCX to PDF and return output path
+# Use MS Word (COM) to convert RTF/DOC/DOCX to PDF and return output path
 def convert_to_pdf_with_word(input_path, output_folder, logger=None):
     import win32com.client
     pdf_path = os.path.splitext(input_path)[0] + ".pdf"
@@ -529,7 +596,7 @@ def convert_to_pdf_with_word(input_path, output_folder, logger=None):
         doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17)
         doc.Close(False)
         time.sleep(0.5)
-    except Exception as e:
+    except Exception:
         pass
     finally:
         word.Quit()
@@ -540,17 +607,16 @@ class TLFApp(QtWidgets.QWidget):
     log_signal = QtCore.pyqtSignal(str)
     message_signal = QtCore.pyqtSignal(str, str)
     AUTO_REFRESH_INTERVAL_MS = 3000
-    
-    # Update selected file counts
+
     def update_selected_counts(self):
-        rtf_count = sum(1 for row in self.table_data if row[0] and row[1] == "RTF")
+        rtf_count  = sum(1 for row in self.table_data if row[0] and row[1] == "RTF")
+        doc_count  = sum(1 for row in self.table_data if row[0] and row[1] == "DOC")   # NEW
         docx_count = sum(1 for row in self.table_data if row[0] and row[1] == "DOCX")
-        pdf_count = sum(1 for row in self.table_data if row[0] and row[1] == "PDF")
+        pdf_count  = sum(1 for row in self.table_data if row[0] and row[1] == "PDF")
         self.selected_counts_label.setText(
-            f"Selected: <b>{rtf_count}</b> RTF | <b>{docx_count}</b> DOCX | <b>{pdf_count}</b> PDF"
+            f"Selected: <b>{rtf_count}</b> RTF | <b>{doc_count}</b> DOC | <b>{docx_count}</b> DOCX | <b>{pdf_count}</b> PDF"
         )
-    
-    # Build the GUI, wire signals/slots, and start auto-refresh timer
+
     def __init__(self):
         super().__init__()
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.ico")
@@ -567,7 +633,7 @@ class TLFApp(QtWidgets.QWidget):
         self.table_data = []
         self.out_folder = ""
         self.filtered_indices = []
-        self.select_all_state = True  # Toggle tracker
+        self.select_all_state = True
 
         self.sorted_once = False
         self.current_sort_column = None
@@ -590,7 +656,6 @@ class TLFApp(QtWidgets.QWidget):
         query.setAlignment(QtCore.Qt.AlignRight)
         layout.addWidget(query)
 
-        # === Filter Row with TOC checkbox ===
         filter_layout = QtWidgets.QHBoxLayout()
         filter_label = QtWidgets.QLabel("Search:")
         filter_label.setFont(font_main)
@@ -606,14 +671,12 @@ class TLFApp(QtWidgets.QWidget):
         """)
         filter_layout.addWidget(self.search_box)
 
-        # === TOC Checkbox next to Search ===
         self.toc_checkbox = QtWidgets.QCheckBox("Include TOC page")
         self.toc_checkbox.setChecked(True)
         self.toc_checkbox.setFont(QtGui.QFont("Times New Roman", 11))
         filter_layout.addWidget(self.toc_checkbox)
 
-        # === Selected Counts Box ===
-        self.selected_counts_label = QtWidgets.QLabel("Selected: 0 RTF | 0 DOCX | 0 PDF")
+        self.selected_counts_label = QtWidgets.QLabel("Selected: 0 RTF | 0 DOC | 0 DOCX | 0 PDF")  # NEW
         self.selected_counts_label.setFont(QtGui.QFont("Times New Roman", 11, QtGui.QFont.Bold))
         self.selected_counts_label.setStyleSheet("color: #003366; margin-left: 12px;")
         filter_layout.addWidget(self.selected_counts_label)
@@ -624,7 +687,7 @@ class TLFApp(QtWidgets.QWidget):
         filter_layout.addWidget(tip_label)
         filter_layout.addStretch()
         layout.addLayout(filter_layout)
-        # === Table Headers ===
+
         self.labels = ["Include", "Type", "Filename", "Title 1", "Title 2", "Title 3", "Bookmark"]
         self.table = QtWidgets.QTableWidget(0, len(self.labels))
         self.table.setHorizontalHeaderLabels(self.labels)
@@ -646,7 +709,6 @@ class TLFApp(QtWidgets.QWidget):
         self.table.setColumnWidth(1, 75)
         layout.addWidget(self.table)
 
-        # === Button Row ===
         btn_layout = QtWidgets.QHBoxLayout()
         btn_base_style = """
             QPushButton {
@@ -668,7 +730,6 @@ class TLFApp(QtWidgets.QWidget):
         """)
         btn_layout.addWidget(self.browse_btn)
 
-        # ✅ Combined Toggle Button
         self.select_toggle_btn = QtWidgets.QPushButton("Select All")
         self.select_toggle_btn.setStyleSheet(btn_base_style + """
             QPushButton { background-color: #33b9b2; color: #fff; }
@@ -711,7 +772,6 @@ class TLFApp(QtWidgets.QWidget):
         """)
         btn_layout.addWidget(self.pack_btn)
 
-        # 🟥 Terminate button at far right
         self.terminate_btn = QtWidgets.QPushButton("Terminate")
         self.terminate_btn.setStyleSheet(btn_base_style + """
             QPushButton { background-color: #f14b4b; color: white; }
@@ -720,17 +780,16 @@ class TLFApp(QtWidgets.QWidget):
         btn_layout.addWidget(self.terminate_btn)
 
         layout.addLayout(btn_layout)
-        # === Button Tooltips ===
+
         self.browse_btn.setToolTip("Browse and select the folder containing your TLF outputs.")
         self.select_toggle_btn.setToolTip("Click to select or deselect all visible rows.")
         self.export_btn.setToolTip("Export the current table (with bookmarks) to an Excel file.")
         self.up_btn.setToolTip("Move selected row up in the order.")
         self.down_btn.setToolTip("Move selected row down in the order.")
-        self.convert_btn.setToolTip("Convert selected RTF/DOCX files to PDF using MS Word.\n(Optional - Pack & TOC will auto-convert if needed)")
-        self.pack_btn.setToolTip("ONE-CLICK: Auto-converts RTF/DOCX, merges all PDFs, adds bookmarks & TOC.\nNo need to convert separately!")
+        self.convert_btn.setToolTip("Convert selected RTF/DOC/DOCX files to PDF using MS Word.\n(Optional - Pack & TOC will auto-convert if needed)")  # NEW
+        self.pack_btn.setToolTip("ONE-CLICK: Auto-converts RTF/DOC/DOCX, merges all PDFs, adds bookmarks & TOC.\nNo need to convert separately!")       # NEW
         self.terminate_btn.setToolTip("Force quit the application immediately.")
 
-        # === Output File Field ===
         self.outpdf_var = QtWidgets.QLineEdit(f"TLFs_Merged_{datetime.datetime.now().strftime('%Y%m%d_T%H%M')}.pdf")
         self.outpdf_var.setStyleSheet("""
             QLineEdit { border-radius: 8px; padding: 4px 6px; border: 1px solid #b8c2d0; background: #fff; }
@@ -742,7 +801,6 @@ class TLFApp(QtWidgets.QWidget):
         output_pdf_row.addWidget(self.outpdf_var)
         layout.addLayout(output_pdf_row)
 
-        # === Log Box ===
         log_lbl = QtWidgets.QLabel("Log:")
         log_lbl.setFont(font_main)
         layout.addWidget(log_lbl)
@@ -777,7 +835,6 @@ class TLFApp(QtWidgets.QWidget):
         self.last_folder = ""
         self.last_fileset = set()
 
-    # Toggle Include column for all visible rows (select/deselect all)
     def toggle_select_all(self):
         indices = self.filtered_indices if self.filtered_indices else list(range(len(self.table_data)))
         for idx in indices:
@@ -787,7 +844,6 @@ class TLFApp(QtWidgets.QWidget):
         self.refresh_table()
         self.update_selected_counts()
 
-    # Repaint the table from model data, preserving selection and alternating colors
     def refresh_table(self):
         row = self.table.currentRow()
         self.table.setRowCount(0)
@@ -815,6 +871,8 @@ class TLFApp(QtWidgets.QWidget):
                         item.setBackground(QtGui.QColor("#FFE0BB"))
                     elif ftype == "DOCX":
                         item.setBackground(QtGui.QColor("#C9F6C9"))
+                    elif ftype == "DOC":   # NEW
+                        item.setBackground(QtGui.QColor("#FFF2B2"))  # NEW (light yellow)
                     else:
                         item.setBackground(base_bg)
                 elif col == 6:
@@ -831,7 +889,6 @@ class TLFApp(QtWidgets.QWidget):
             self.table.selectRow(row)
         self.update_selected_counts()
 
-    # Sort rows by clicked column (with special handling for Include/Bookmark)
     def handle_header_sort(self, logicalIndex):
         if self.current_sort_column == logicalIndex:
             self.sort_order = (
@@ -854,15 +911,12 @@ class TLFApp(QtWidgets.QWidget):
         self.table.horizontalHeader().setSortIndicatorShown(True)
         self.table.horizontalHeader().setSortIndicator(col, self.sort_order)
 
-    # Emit a log message safely from worker threads
     def thread_safe_log(self, msg):
         self.log_signal.emit(str(msg))
 
-    # Emit an info/error/done message safely from worker threads
     def thread_safe_message(self, mtype, msg):
         self.message_signal.emit(mtype, msg)
 
-    # Display a message box based on type (info/error/done)
     def show_messagebox(self, mtype, msg):
         if mtype == "info":
             QtWidgets.QMessageBox.information(self, "Info", msg)
@@ -871,13 +925,11 @@ class TLFApp(QtWidgets.QWidget):
         elif mtype == "done":
             QtWidgets.QMessageBox.information(self, "Done", msg)
 
-    # Append a line to the log box and autoscroll
     def log(self, msg):
         self.log_box.appendPlainText(str(msg))
         self.log_box.verticalScrollBar().setValue(self.log_box.verticalScrollBar().maximum())
         QtWidgets.QApplication.processEvents()
 
-    # Enable/disable primary buttons based on current state
     def set_button_states(self, browse=True, others=False, convert=False, pack=False):
         self.browse_btn.setEnabled(browse)
         for btn in [self.select_toggle_btn, self.export_btn, self.up_btn, self.down_btn]:
@@ -886,19 +938,17 @@ class TLFApp(QtWidgets.QWidget):
         self.pack_btn.setEnabled(pack)
         self.terminate_btn.setEnabled(True)
 
-    # Compute and apply button states from table contents/selection
     def update_button_states(self):
         has_outputs = len(self.table_data) > 0
         any_checked = any(row[0] for row in self.table_data)
-        any_rtf_docx_checked = any(row[0] and row[1] in ["RTF", "DOCX"] for row in self.table_data)
+        any_office_checked = any(row[0] and row[1] in ["RTF", "DOC", "DOCX"] for row in self.table_data)  # NEW
         self.set_button_states(
             browse=True,
             others=has_outputs,
-            convert=any_rtf_docx_checked and has_outputs,
+            convert=any_office_checked and has_outputs,  # NEW
             pack=any_checked and has_outputs
         )
 
-    # Let user pick a folder and trigger initial scan
     def browse_folder(self):
         folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Folder")
         if not folder: return
@@ -908,20 +958,25 @@ class TLFApp(QtWidgets.QWidget):
         self.log_box.clear()
         self.thread_safe_log("Auto-refresh is enabled (every 3 seconds). Any new file will be auto-detected.")
 
-    # Scan folder, add/remove files, extract titles, and (first run) auto-sort
     def refresh_folder(self, full_rescan=False):
         if not self.out_folder: return
         folder = self.out_folder
-        rtf_files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.rtf') and not f.startswith('~$'))
-        pdf_files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.pdf') and not f.startswith('~$'))
+
+        rtf_files  = sorted(f for f in os.listdir(folder) if f.lower().endswith('.rtf')  and not f.startswith('~$'))
+        doc_files  = sorted(f for f in os.listdir(folder) if f.lower().endswith('.doc')  and not f.startswith('~$'))   # NEW
+        pdf_files  = sorted(f for f in os.listdir(folder) if f.lower().endswith('.pdf')  and not f.startswith('~$'))
         docx_files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.docx') and not f.startswith('~$'))
 
-        file_list = [("RTF", f) for f in rtf_files] + [("PDF", f) for f in pdf_files] + [("DOCX", f) for f in docx_files]
+        file_list = (
+            [("RTF",  f) for f in rtf_files] +
+            [("DOC",  f) for f in doc_files] +      # NEW
+            [("PDF",  f) for f in pdf_files] +
+            [("DOCX", f) for f in docx_files]
+        )
         fileset = set(file_list)
         data_lookup = {(row[1], row[2]): i for i, row in enumerate(self.table_data)}
         existing_keys = set(data_lookup.keys())
 
-        # Remove missing files
         i = 0
         while i < len(self.table_data):
             key = (self.table_data[i][1], self.table_data[i][2])
@@ -930,23 +985,25 @@ class TLFApp(QtWidgets.QWidget):
             else:
                 i += 1
 
-        # Add new files
         for ftype, fname in file_list:
             if (ftype, fname) not in existing_keys:
                 file_path = os.path.join(folder, fname)
                 if ftype == 'RTF':
                     t1, t2, t3, bm = extract_titles_from_rtf(file_path)
+                elif ftype == 'DOC':  # NEW
+                    t1, t2, t3, bm = extract_title_from_doc(file_path)  # NEW
                 elif ftype == 'PDF':
                     t1, t2, t3, bm = extract_title_from_pdf(file_path)
                 elif ftype == 'DOCX':
                     t1, t2, t3, bm = extract_title_from_docx(file_path)
                 self.table_data.append([True, ftype, fname, t1, t2, t3, bm])
+
         if not self.sorted_once:
             self.table_data.sort(key=lambda x: parse_sort_key(x[6]))
             self.sorted_once = True
+
         self.apply_filter()
 
-    # Filter visible rows by search text across all columns
     def apply_filter(self):
         search = self.search_box.text().strip().lower()
         if not search:
@@ -960,7 +1017,6 @@ class TLFApp(QtWidgets.QWidget):
                         break
         self.refresh_table()
 
-    # Save current table (with order/flags) to Excel in the output folder
     def export_excel(self):
         if not self.table_data or not self.out_folder:
             self.thread_safe_message("error", "No data or folder selected.")
@@ -969,7 +1025,6 @@ class TLFApp(QtWidgets.QWidget):
         export_bookmarks_to_excel(self.table_data, export_path)
         self.thread_safe_message("done", f"Bookmarks exported to:\n{export_path}")
 
-    # Move the selected row up in the underlying data order
     def move_up(self):
         selected = self.table.currentRow()
         if selected <= 0: return
@@ -980,7 +1035,6 @@ class TLFApp(QtWidgets.QWidget):
         self.apply_filter()
         self.table.selectRow(selected-1)
 
-    # Move the selected row down in the underlying data order
     def move_down(self):
         selected = self.table.currentRow()
         indices = self.filtered_indices if self.filtered_indices else list(range(len(self.table_data)))
@@ -991,17 +1045,18 @@ class TLFApp(QtWidgets.QWidget):
         self.apply_filter()
         self.table.selectRow(selected+1)
 
-    # Convert checked RTF/DOCX files to PDF using Word (runs in a worker thread)
     def convert_checked_files(self):
-        files_to_convert = [row for row in self.table_data if row[0] and row[1] in ['RTF', 'DOCX']]
+        files_to_convert = [row for row in self.table_data if row[0] and row[1] in ['RTF', 'DOC', 'DOCX']]  # NEW
         if not files_to_convert or not self.out_folder:
-            self.thread_safe_message("error", "No checked RTF/DOCX files to convert.")
+            self.thread_safe_message("error", "No checked RTF/DOC/DOCX files to convert.")
             return
-        rtf_count = sum(1 for row in files_to_convert if row[1] == 'RTF')
+
+        rtf_count  = sum(1 for row in files_to_convert if row[1] == 'RTF')
+        doc_count  = sum(1 for row in files_to_convert if row[1] == 'DOC')   # NEW
         docx_count = sum(1 for row in files_to_convert if row[1] == 'DOCX')
-        self.thread_safe_log(f"Total {rtf_count} RTF, {docx_count} DOCX selected for conversion.")
+        self.thread_safe_log(f"Total {rtf_count} RTF, {doc_count} DOC, {docx_count} DOCX selected for conversion.")
         total = len(files_to_convert)
-    
+
         def worker():
             try:
                 for idx, row in enumerate(files_to_convert):
@@ -1010,7 +1065,7 @@ class TLFApp(QtWidgets.QWidget):
                     file_path = os.path.join(self.out_folder, fname)
                     pdf_path = convert_to_pdf_with_word(file_path, self.out_folder)
                     self.thread_safe_log(f"[Completed] {ftype} ➜ PDF: {os.path.basename(pdf_path)}")
-                self.thread_safe_message("done", "Conversion completed for all selected RTF/DOCX files.")
+                self.thread_safe_message("done", "Conversion completed for all selected RTF/DOC/DOCX files.")
             except Exception as e:
                 import traceback
                 tb = traceback.format_exc()
@@ -1020,63 +1075,64 @@ class TLFApp(QtWidgets.QWidget):
         import threading
         threading.Thread(target=worker, daemon=True).start()
 
-    # Merge checked PDFs, add bookmarks, optionally insert TOC pages, and save output
     def generate_pdf(self):
         if not self.table_data or not self.out_folder:
             self.thread_safe_message("error", "No data or folder selected.")
             return
-        # === Dynamic PDF Name with versioning ===
+
         default_prefix = "TLFs_Merged_"
         timestamp_now = datetime.datetime.now().strftime('%Y%m%d_T%H%M')
         suggested_default = f"{default_prefix}{timestamp_now}.pdf"
         user_input = self.outpdf_var.text().strip()
 
-        # If user didn't edit, update timestamp
         if user_input.startswith(default_prefix):
             output_pdf = suggested_default
         else:
             output_pdf = user_input if user_input.lower().endswith(".pdf") else f"{user_input}.pdf"
 
-        # Check if file exists and auto-append _v2, _v3, etc.
         base_name, ext = os.path.splitext(output_pdf)
         counter = 2
         while os.path.exists(os.path.join(self.out_folder, output_pdf)):
             output_pdf = f"{base_name}_v{counter}{ext}"
             counter += 1
 
-        # Set final name in GUI
         self.outpdf_var.setText(output_pdf)
         output_path = os.path.join(self.out_folder, output_pdf)
+
         files_to_pack = [row for row in self.table_data if row[0]]
         if not files_to_pack:
             self.thread_safe_message("error", "No files selected.")
             return
 
-        rtf_count = sum(1 for row in files_to_pack if row[1] == 'RTF')
-        pdf_count = sum(1 for row in files_to_pack if row[1] == 'PDF')
+        rtf_count  = sum(1 for row in files_to_pack if row[1] == 'RTF')
+        doc_count  = sum(1 for row in files_to_pack if row[1] == 'DOC')   # NEW
+        pdf_count  = sum(1 for row in files_to_pack if row[1] == 'PDF')
         docx_count = sum(1 for row in files_to_pack if row[1] == 'DOCX')
-        self.thread_safe_log(f"Total: {rtf_count} RTF, {pdf_count} PDF, {docx_count} DOCX selected.")
+        self.thread_safe_log(f"Total: {rtf_count} RTF, {doc_count} DOC, {pdf_count} PDF, {docx_count} DOCX selected.")
 
         def worker():
             try:
                 temp_pdfs = []
                 toc = []
-                import fitz
                 merged = fitz.open()
                 page_count = 0
+
                 for idx, row in enumerate(files_to_pack):
                     ftype, fname, t1, t2, t3, bm = row[1:]
                     self.thread_safe_log(f"[{idx+1}/{len(files_to_pack)}] Processing: {fname}")
                     file_path = os.path.join(self.out_folder, fname)
-                    if ftype in ['RTF', 'DOCX']:
+
+                    if ftype in ['RTF', 'DOC', 'DOCX']:  # NEW
                         pdf_path = convert_to_pdf_with_word(file_path, self.out_folder)
                         temp_pdfs.append(pdf_path)
                     else:
                         pdf_path = file_path
+
                     toc.append([1, bm, page_count + 1])
-                    with fitz.open(pdf_path) as doc:
-                        merged.insert_pdf(doc)
-                        page_count += doc.page_count
+                    with fitz.open(pdf_path) as docpdf:
+                        merged.insert_pdf(docpdf)
+                        page_count += docpdf.page_count
+
                 self.thread_safe_log("[Merging] Inserting TOC and bookmarks...")
                 temp_bookmarked_pdf = output_path.replace('.pdf', '_bookmarked.pdf')
                 merged.set_toc(toc)
@@ -1089,7 +1145,8 @@ class TLFApp(QtWidgets.QWidget):
                     os.rename(temp_bookmarked_pdf, output_path)
 
                 for tfile in temp_pdfs:
-                    if os.path.exists(tfile): os.remove(tfile)
+                    if os.path.exists(tfile):
+                        os.remove(tfile)
 
                 self.thread_safe_log(f"[DONE] PDF created: {output_path}")
                 self.thread_safe_message("done", f"Output PDF generated:\n{output_path}")
@@ -1102,7 +1159,6 @@ class TLFApp(QtWidgets.QWidget):
         import threading
         threading.Thread(target=worker, daemon=True).start()
 
-    # Toggle Include when the first column is clicked and keep row selected
     def on_cell_clicked(self, row, col):
         if col == 0:
             indices = self.filtered_indices if self.filtered_indices else list(range(len(self.table_data)))
@@ -1112,7 +1168,6 @@ class TLFApp(QtWidgets.QWidget):
         self.table.selectRow(row)
         self.update_selected_counts()
 
-    # Allow in-place editing of the Bookmark column via dialog
     def on_cell_double_clicked(self, row, col):
         if col == 6:
             indices = self.filtered_indices if self.filtered_indices else list(range(len(self.table_data)))
@@ -1124,13 +1179,11 @@ class TLFApp(QtWidgets.QWidget):
                 self.refresh_table()
             self.table.selectRow(row)
 
-    # Keep the clicked row selected for consistent UX
     def ensure_row_selected(self, index):
         row = index.row()
         self.table.selectRow(row)
 
 # === Application Entry Point ===
-# Launch the PyQt application and show the TLFApp window
 def main():
     app = QtWidgets.QApplication(sys.argv)
     window = TLFApp()
