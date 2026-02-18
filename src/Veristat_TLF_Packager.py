@@ -1,21 +1,31 @@
-# ****************************************************************************************************
+# ====================================================================================================
 # Script Name    : Veristat_TLF_Packager.py
 #
-# Purpose        : GUI Tool to scan RTF, DOCX, DOC and PDF files in a folder,
-#                  extract TLF titles (from RTF: header/first lines, DOCX: header/body,
-#                  DOC: header/table/body via MS Word read-only, PDF: page 1),
-#                  display for user review, filter, reorder (move up/down), and export details to Excel.
-#                  Users can convert RTF/DOC/DOCX files to PDF (via Microsoft Word),
-#                  and generate a single bookmarked PDF with advanced, clickable Table of Contents.
+# Description    :
+#                  Desktop GUI utility for packaging TLF outputs
+#                  (RTF, DOC, DOCX, PDF) into a single submission-ready PDF.
+#
+#                  The application scans a selected folder, extracts Title 1 / Title 2 / Title 3
+#                  from each file, and presents them in an interactive interface where users can
+#                  filter, select, edit bookmark text, and reorder outputs.
+#
+#                  Metadata can be exported to Excel for external review or modification.
+#                  Office documents are converted to PDF using Microsoft Word automation,
+#                  and all selected files are merged into a single PDF with hierarchical
+#                  bookmarks and a fully clickable Table of Contents.
+#
+#                  Supports legacy DOC format in addition to RTF, DOCX and PDF.
 #
 # Author         : Manivannan Mathialagan
-#
 # Created On     : 22-May-2025
 #
-# Notes:
-#   - Requires Python 3, openpyxl, PyMuPDF (fitz), PyQt5, pywin32, python-docx
-#   - Requires Microsoft Word installed for DOC/RTF/DOCX reading & conversion (via pywin32)
-# ****************************************************************************************************
+# Update         : Added support for legacy DOC format handling and conversion
+# Updated On     : 18-Feb-2026
+#
+# Requirements   : Python 3.x
+#                  openpyxl, PyMuPDF (fitz), PyQt5, pywin32, python-docx
+#                  Microsoft Word (required for DOC/RTF/DOCX reading & conversion)
+# ====================================================================================================
 
 import sys
 import subprocess
@@ -60,17 +70,22 @@ UNCHECKED = '\u2610' # ☐
 # Pull top-level RTF header groups {...} from the \header block
 def extract_groups_from_rtf_header(rtf_text):
     header_match = re.search(r'(\\header[lr]?)(.+?)(\\sectd|$)', rtf_text, re.DOTALL)
-    if not header_match: return []
+    if not header_match:
+        return []
     header_text = header_match.group(2)
     groups, depth, buf = [], 0, ""
     for c in header_text:
         if c == '{':
-            if depth == 0: buf = ""
+            if depth == 0:
+                buf = ""
             depth += 1
             buf += c
         elif c == '}':
-            buf += c; depth -= 1
-            if depth == 0 and buf: groups.append(buf); buf = ""
+            buf += c
+            depth -= 1
+            if depth == 0 and buf:
+                groups.append(buf)
+                buf = ""
         elif depth > 0:
             buf += c
     return groups
@@ -103,7 +118,6 @@ def filter_note_from_line(text):
 
 # Detect if text is likely footer content
 def is_footer_content(text):
-    """Detect if text is likely footer content"""
     text_lower = text.lower().strip()
 
     footer_patterns = [
@@ -191,20 +205,22 @@ def extract_titles_from_rtf(rtf_path):
             remainder = filter_note_from_line(remainder)
             if remainder and valid_title_candidate(remainder):
                 title2 = remainder
-            if not title2 and i+1 < len(header_lines):
-                t2_clean = filter_note_from_line(header_lines[i+1])
+            if not title2 and i + 1 < len(header_lines):
+                t2_clean = filter_note_from_line(header_lines[i + 1])
                 if valid_title_candidate(t2_clean):
                     title2 = t2_clean.strip()
-            if i+2 < len(header_lines):
-                t3_clean = filter_note_from_line(header_lines[i+2])
+            if i + 2 < len(header_lines):
+                t3_clean = filter_note_from_line(header_lines[i + 2])
                 if valid_title_candidate(t3_clean):
                     title3 = t3_clean.strip()
             break
 
     if title1:
         bookmark = title1
-        if title2: bookmark += ": " + title2
-        if title3: bookmark += " - " + title3
+        if title2:
+            bookmark += ": " + title2
+        if title3:
+            bookmark += " - " + title3
         return title1, title2, title3, bookmark
     return "", "", "", os.path.basename(rtf_path)
 
@@ -223,23 +239,31 @@ def extract_title_from_pdf(pdf_path):
                 title1 = match.group(0).strip()
                 remainder = line[len(match.group(0)):].strip(" :–-")
                 remainder = filter_note_from_line(remainder)
-                if remainder and valid_title_candidate(remainder): title2 = remainder
-                if not title2 and i+1 < len(lines):
-                    cand2_clean = filter_note_from_line(lines[i+1])
-                    if valid_title_candidate(cand2_clean): title2 = cand2_clean.strip()
-                if i+2 < len(lines):
-                    cand3_clean = filter_note_from_line(lines[i+2])
-                    if valid_title_candidate(cand3_clean): title3 = cand3_clean.strip()
+                if remainder and valid_title_candidate(remainder):
+                    title2 = remainder
+                if not title2 and i + 1 < len(lines):
+                    cand2_clean = filter_note_from_line(lines[i + 1])
+                    if valid_title_candidate(cand2_clean):
+                        title2 = cand2_clean.strip()
+                if i + 2 < len(lines):
+                    cand3_clean = filter_note_from_line(lines[i + 2])
+                    if valid_title_candidate(cand3_clean):
+                        title3 = cand3_clean.strip()
                 break
         if not title1:
             for line in lines[:3]:
                 if valid_title_candidate(line):
-                    if not title1: title1 = filter_note_from_line(line)
-                    elif not title2: title2 = filter_note_from_line(line)
-                    elif not title3: title3 = filter_note_from_line(line)
+                    if not title1:
+                        title1 = filter_note_from_line(line)
+                    elif not title2:
+                        title2 = filter_note_from_line(line)
+                    elif not title3:
+                        title3 = filter_note_from_line(line)
         bookmark = title1
-        if title2: bookmark += ": " + title2
-        if title3: bookmark += " - " + title3
+        if title2:
+            bookmark += ": " + title2
+        if title3:
+            bookmark += " - " + title3
         if not bookmark.strip():
             bookmark = os.path.basename(pdf_path)
         return title1, title2, title3, bookmark
@@ -266,13 +290,16 @@ def extract_title_from_docx(docx_path):
                 title1 = match.group(0).strip()
                 remainder = line[len(match.group(0)):].strip(" :–-")
                 remainder = filter_note_from_line(remainder)
-                if remainder and valid_title_candidate(remainder): title2 = remainder
-                if not title2 and idx+1 < len(paras):
-                    cand2 = paras[idx+1]
-                    if valid_title_candidate(cand2): title2 = cand2
-                if idx+2 < len(paras):
-                    cand3 = paras[idx+2]
-                    if valid_title_candidate(cand3): title3 = cand3
+                if remainder and valid_title_candidate(remainder):
+                    title2 = remainder
+                if not title2 and idx + 1 < len(paras):
+                    cand2 = paras[idx + 1]
+                    if valid_title_candidate(cand2):
+                        title2 = cand2
+                if idx + 2 < len(paras):
+                    cand3 = paras[idx + 2]
+                    if valid_title_candidate(cand3):
+                        title3 = cand3
                 break
         if not title1:
             body_paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
@@ -280,7 +307,8 @@ def extract_title_from_docx(docx_path):
                 for row in table.rows:
                     for cell in row.cells:
                         cell_text = cell.text.strip()
-                        if cell_text: body_paras.append(cell_text)
+                        if cell_text:
+                            body_paras.append(cell_text)
             body_paras = [p for p in body_paras if not is_footer_content(p)]
             for idx, line in enumerate(body_paras[:15]):
                 match = re.match(title_pattern, line, re.IGNORECASE)
@@ -288,13 +316,16 @@ def extract_title_from_docx(docx_path):
                     title1 = match.group().strip()
                     remainder = line[len(match.group()):].strip(" :–-")
                     remainder = filter_note_from_line(remainder)
-                    if remainder and valid_title_candidate(remainder): title2 = remainder
-                    if not title2 and idx+1 < len(body_paras):
-                        cand2 = body_paras[idx+1]
-                        if valid_title_candidate(cand2): title2 = cand2
-                    if idx+2 < len(body_paras):
-                        cand3 = body_paras[idx+2]
-                        if valid_title_candidate(cand3): title3 = cand3
+                    if remainder and valid_title_candidate(remainder):
+                        title2 = remainder
+                    if not title2 and idx + 1 < len(body_paras):
+                        cand2 = body_paras[idx + 1]
+                        if valid_title_candidate(cand2):
+                            title2 = cand2
+                    if idx + 2 < len(body_paras):
+                        cand3 = body_paras[idx + 2]
+                        if valid_title_candidate(cand3):
+                            title3 = cand3
                     break
             if not title1:
                 all_lines = paras + body_paras
@@ -302,13 +333,19 @@ def extract_title_from_docx(docx_path):
                 for line in all_lines[:15]:
                     if valid_title_candidate(line):
                         found_lines += 1
-                        if not title1: title1 = filter_note_from_line(line)
-                        elif not title2: title2 = filter_note_from_line(line)
-                        elif not title3: title3 = filter_note_from_line(line)
-                        if found_lines == 3: break
+                        if not title1:
+                            title1 = filter_note_from_line(line)
+                        elif not title2:
+                            title2 = filter_note_from_line(line)
+                        elif not title3:
+                            title3 = filter_note_from_line(line)
+                        if found_lines == 3:
+                            break
         bookmark = title1
-        if title2: bookmark += ": " + title2
-        if title3: bookmark += " - " + title3
+        if title2:
+            bookmark += ": " + title2
+        if title3:
+            bookmark += " - " + title3
         if not bookmark.strip():
             bookmark = os.path.basename(docx_path)
         return title1, title2, title3, bookmark
@@ -401,12 +438,12 @@ def extract_title_from_doc(doc_path):
                 remainder = filter_note_from_line(remainder)
                 if remainder and valid_title_candidate(remainder):
                     title2 = remainder
-                if not title2 and i+1 < len(lines):
-                    cand2_clean = filter_note_from_line(lines[i+1])
+                if not title2 and i + 1 < len(lines):
+                    cand2_clean = filter_note_from_line(lines[i + 1])
                     if valid_title_candidate(cand2_clean):
                         title2 = cand2_clean.strip()
-                if i+2 < len(lines):
-                    cand3_clean = filter_note_from_line(lines[i+2])
+                if i + 2 < len(lines):
+                    cand3_clean = filter_note_from_line(lines[i + 2])
                     if valid_title_candidate(cand3_clean):
                         title3 = cand3_clean.strip()
                 break
@@ -414,15 +451,20 @@ def extract_title_from_doc(doc_path):
         if not title1:
             for ln in lines[:15]:
                 if valid_title_candidate(ln):
-                    if not title1: title1 = filter_note_from_line(ln)
-                    elif not title2: title2 = filter_note_from_line(ln)
-                    elif not title3: title3 = filter_note_from_line(ln)
+                    if not title1:
+                        title1 = filter_note_from_line(ln)
+                    elif not title2:
+                        title2 = filter_note_from_line(ln)
+                    elif not title3:
+                        title3 = filter_note_from_line(ln)
                     if title1 and title2 and title3:
                         break
 
         bookmark = title1
-        if title2: bookmark += ": " + title2
-        if title3: bookmark += " - " + title3
+        if title2:
+            bookmark += ": " + title2
+        if title3:
+            bookmark += " - " + title3
         if not bookmark.strip():
             bookmark = os.path.basename(doc_path)
 
@@ -534,7 +576,7 @@ def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
         return toc_doc, link_targets
 
     base = fitz.open(bookmarked_pdf)
-    original_toc = extract_toc_entries(base)
+    original_toc = [(lvl, title.strip(), page_num - 1) for lvl, title, page_num in base.get_toc(simple=True)]
     original_bookmarks = base.get_toc()
     width, height = fitz.paper_size("a4")
     left_margin, right_margin = 50, 60
@@ -577,7 +619,7 @@ def export_bookmarks_to_excel(table_data, out_path):
     headers = ["Include", "File Type", "Filename", "Title 1", "Title 2", "Title 3", "Bookmark", "Order"]
     ws.append(headers)
     for i, row in enumerate(table_data):
-        ws.append([(1 if row[0] else 0)] + list(row[1:]) + [i+1])
+        ws.append([(1 if row[0] else 0)] + list(row[1:]) + [i + 1])
     for idx, width in enumerate([8, 12, 30, 30, 30, 30, 50, 8], start=1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(idx)].width = width
     for row in ws.iter_rows(min_row=2):
@@ -609,10 +651,10 @@ class TLFApp(QtWidgets.QWidget):
     AUTO_REFRESH_INTERVAL_MS = 3000
 
     def update_selected_counts(self):
-        rtf_count  = sum(1 for row in self.table_data if row[0] and row[1] == "RTF")
-        doc_count  = sum(1 for row in self.table_data if row[0] and row[1] == "DOC")   # NEW
+        rtf_count = sum(1 for row in self.table_data if row[0] and row[1] == "RTF")
+        doc_count = sum(1 for row in self.table_data if row[0] and row[1] == "DOC")
         docx_count = sum(1 for row in self.table_data if row[0] and row[1] == "DOCX")
-        pdf_count  = sum(1 for row in self.table_data if row[0] and row[1] == "PDF")
+        pdf_count = sum(1 for row in self.table_data if row[0] and row[1] == "PDF")
         self.selected_counts_label.setText(
             f"Selected: <b>{rtf_count}</b> RTF | <b>{doc_count}</b> DOC | <b>{docx_count}</b> DOCX | <b>{pdf_count}</b> PDF"
         )
@@ -676,7 +718,7 @@ class TLFApp(QtWidgets.QWidget):
         self.toc_checkbox.setFont(QtGui.QFont("Times New Roman", 11))
         filter_layout.addWidget(self.toc_checkbox)
 
-        self.selected_counts_label = QtWidgets.QLabel("Selected: 0 RTF | 0 DOC | 0 DOCX | 0 PDF")  # NEW
+        self.selected_counts_label = QtWidgets.QLabel("Selected: 0 RTF | 0 DOC | 0 DOCX | 0 PDF")
         self.selected_counts_label.setFont(QtGui.QFont("Times New Roman", 11, QtGui.QFont.Bold))
         self.selected_counts_label.setStyleSheet("color: #003366; margin-left: 12px;")
         filter_layout.addWidget(self.selected_counts_label)
@@ -685,9 +727,13 @@ class TLFApp(QtWidgets.QWidget):
         tip_label.setFont(QtGui.QFont("Times New Roman", 11))
         tip_label.setStyleSheet("background: #e6f2fb; color: #12608d; border-radius: 5px; padding: 3px 12px; margin-left: 14px;")
         filter_layout.addWidget(tip_label)
+
         filter_layout.addStretch()
         layout.addLayout(filter_layout)
 
+        # ----------------------------
+        # TABLE (FIXED: add to layout)
+        # ----------------------------
         self.labels = ["Include", "Type", "Filename", "Title 1", "Title 2", "Title 3", "Bookmark"]
         self.table = QtWidgets.QTableWidget(0, len(self.labels))
         self.table.setHorizontalHeaderLabels(self.labels)
@@ -703,12 +749,45 @@ class TLFApp(QtWidgets.QWidget):
             QTableWidget::item:selected { background: #356AC3; color: #fff; }
         """)
         self.table.verticalHeader().setDefaultSectionSize(24)
-        header_view = self.table.horizontalHeader()
-        header_view.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        self.table.setColumnWidth(0, 60)
-        self.table.setColumnWidth(1, 75)
-        layout.addWidget(self.table)
 
+        header_view = self.table.horizontalHeader()
+
+        # IMPORTANT: do NOT stretch everything
+        header_view.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        header_view.setStretchLastSection(False)
+
+        # Column index reference
+        # 0 Include | 1 Type | 2 Filename | 3 Title1 | 4 Title2 | 5 Title3 | 6 Bookmark
+
+        # Small utility columns
+        header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # Include checkbox
+        header_view.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Type
+
+        # Other columns
+        header_view.setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)  # Filename
+        header_view.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # Title1
+        header_view.setSectionResizeMode(4, QtWidgets.QHeaderView.Interactive)  # Title2
+        header_view.setSectionResizeMode(5, QtWidgets.QHeaderView.Interactive)  # Title3
+
+        # Bookmark gets most space
+        header_view.setSectionResizeMode(6, QtWidgets.QHeaderView.Stretch)
+
+        # Default widths (initial look)
+        self.table.setColumnWidth(0, 55)
+        self.table.setColumnWidth(1, 65)
+        self.table.setColumnWidth(2, 230)
+        self.table.setColumnWidth(3, 160)
+        self.table.setColumnWidth(4, 160)
+        self.table.setColumnWidth(5, 160)
+        # Bookmark auto-expands
+
+        # FIX: Make table expand and actually visible
+        self.table.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        layout.addWidget(self.table, 1)  # <--- THIS is what you were missing
+
+        # ----------------------------
+        # BUTTON ROW
+        # ----------------------------
         btn_layout = QtWidgets.QHBoxLayout()
         btn_base_style = """
             QPushButton {
@@ -786,8 +865,8 @@ class TLFApp(QtWidgets.QWidget):
         self.export_btn.setToolTip("Export the current table (with bookmarks) to an Excel file.")
         self.up_btn.setToolTip("Move selected row up in the order.")
         self.down_btn.setToolTip("Move selected row down in the order.")
-        self.convert_btn.setToolTip("Convert selected RTF/DOC/DOCX files to PDF using MS Word.\n(Optional - Pack & TOC will auto-convert if needed)")  # NEW
-        self.pack_btn.setToolTip("ONE-CLICK: Auto-converts RTF/DOC/DOCX, merges all PDFs, adds bookmarks & TOC.\nNo need to convert separately!")       # NEW
+        self.convert_btn.setToolTip("Convert selected RTF/DOC/DOCX files to PDF using MS Word.\n(Optional - Pack & TOC will auto-convert if needed)")
+        self.pack_btn.setToolTip("ONE-CLICK: Auto-converts RTF/DOC/DOCX, merges all PDFs, adds bookmarks & TOC.\nNo need to convert separately!")
         self.terminate_btn.setToolTip("Force quit the application immediately.")
 
         self.outpdf_var = QtWidgets.QLineEdit(f"TLFs_Merged_{datetime.datetime.now().strftime('%Y%m%d_T%H%M')}.pdf")
@@ -871,19 +950,16 @@ class TLFApp(QtWidgets.QWidget):
                         item.setBackground(QtGui.QColor("#FFE0BB"))
                     elif ftype == "DOCX":
                         item.setBackground(QtGui.QColor("#C9F6C9"))
-                    elif ftype == "DOC":   # NEW
-                        item.setBackground(QtGui.QColor("#FFF2B2"))  # NEW (light yellow)
+                    elif ftype == "DOC":
+                        item.setBackground(QtGui.QColor("#FFF2B2"))
                     else:
                         item.setBackground(base_bg)
-                elif col == 6:
-                    item.setFont(QtGui.QFont("Times New Roman", 10))
-                    item.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-                    item.setBackground(base_bg)
                 else:
                     item.setFont(QtGui.QFont("Times New Roman", 10))
                     item.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                     item.setBackground(base_bg)
-                self.table.setItem(self.table.rowCount()-1, col, item)
+                self.table.setItem(self.table.rowCount() - 1, col, item)
+
         self.update_button_states()
         if 0 <= row < self.table.rowCount():
             self.table.selectRow(row)
@@ -941,17 +1017,18 @@ class TLFApp(QtWidgets.QWidget):
     def update_button_states(self):
         has_outputs = len(self.table_data) > 0
         any_checked = any(row[0] for row in self.table_data)
-        any_office_checked = any(row[0] and row[1] in ["RTF", "DOC", "DOCX"] for row in self.table_data)  # NEW
+        any_office_checked = any(row[0] and row[1] in ["RTF", "DOC", "DOCX"] for row in self.table_data)
         self.set_button_states(
             browse=True,
             others=has_outputs,
-            convert=any_office_checked and has_outputs,  # NEW
+            convert=any_office_checked and has_outputs,
             pack=any_checked and has_outputs
         )
 
     def browse_folder(self):
         folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Folder")
-        if not folder: return
+        if not folder:
+            return
         self.out_folder = folder
         self.last_folder = folder
         self.refresh_folder(full_rescan=True)
@@ -959,18 +1036,19 @@ class TLFApp(QtWidgets.QWidget):
         self.thread_safe_log("Auto-refresh is enabled (every 3 seconds). Any new file will be auto-detected.")
 
     def refresh_folder(self, full_rescan=False):
-        if not self.out_folder: return
+        if not self.out_folder:
+            return
         folder = self.out_folder
 
-        rtf_files  = sorted(f for f in os.listdir(folder) if f.lower().endswith('.rtf')  and not f.startswith('~$'))
-        doc_files  = sorted(f for f in os.listdir(folder) if f.lower().endswith('.doc')  and not f.startswith('~$'))   # NEW
-        pdf_files  = sorted(f for f in os.listdir(folder) if f.lower().endswith('.pdf')  and not f.startswith('~$'))
+        rtf_files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.rtf') and not f.startswith('~$'))
+        doc_files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.doc') and not f.startswith('~$'))
+        pdf_files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.pdf') and not f.startswith('~$'))
         docx_files = sorted(f for f in os.listdir(folder) if f.lower().endswith('.docx') and not f.startswith('~$'))
 
         file_list = (
-            [("RTF",  f) for f in rtf_files] +
-            [("DOC",  f) for f in doc_files] +      # NEW
-            [("PDF",  f) for f in pdf_files] +
+            [("RTF", f) for f in rtf_files] +
+            [("DOC", f) for f in doc_files] +
+            [("PDF", f) for f in pdf_files] +
             [("DOCX", f) for f in docx_files]
         )
         fileset = set(file_list)
@@ -990,8 +1068,8 @@ class TLFApp(QtWidgets.QWidget):
                 file_path = os.path.join(folder, fname)
                 if ftype == 'RTF':
                     t1, t2, t3, bm = extract_titles_from_rtf(file_path)
-                elif ftype == 'DOC':  # NEW
-                    t1, t2, t3, bm = extract_title_from_doc(file_path)  # NEW
+                elif ftype == 'DOC':
+                    t1, t2, t3, bm = extract_title_from_doc(file_path)
                 elif ftype == 'PDF':
                     t1, t2, t3, bm = extract_title_from_pdf(file_path)
                 elif ftype == 'DOCX':
@@ -1027,32 +1105,36 @@ class TLFApp(QtWidgets.QWidget):
 
     def move_up(self):
         selected = self.table.currentRow()
-        if selected <= 0: return
+        if selected <= 0:
+            return
         indices = self.filtered_indices if self.filtered_indices else list(range(len(self.table_data)))
         actual_idx = indices[selected]
-        if actual_idx <= 0: return
-        self.table_data[actual_idx-1], self.table_data[actual_idx] = self.table_data[actual_idx], self.table_data[actual_idx-1]
+        if actual_idx <= 0:
+            return
+        self.table_data[actual_idx - 1], self.table_data[actual_idx] = self.table_data[actual_idx], self.table_data[actual_idx - 1]
         self.apply_filter()
-        self.table.selectRow(selected-1)
+        self.table.selectRow(selected - 1)
 
     def move_down(self):
         selected = self.table.currentRow()
         indices = self.filtered_indices if self.filtered_indices else list(range(len(self.table_data)))
-        if selected < 0 or selected >= len(indices) - 1: return
+        if selected < 0 or selected >= len(indices) - 1:
+            return
         actual_idx = indices[selected]
-        if actual_idx >= len(self.table_data) - 1: return
-        self.table_data[actual_idx+1], self.table_data[actual_idx] = self.table_data[actual_idx], self.table_data[actual_idx+1]
+        if actual_idx >= len(self.table_data) - 1:
+            return
+        self.table_data[actual_idx + 1], self.table_data[actual_idx] = self.table_data[actual_idx], self.table_data[actual_idx + 1]
         self.apply_filter()
-        self.table.selectRow(selected+1)
+        self.table.selectRow(selected + 1)
 
     def convert_checked_files(self):
-        files_to_convert = [row for row in self.table_data if row[0] and row[1] in ['RTF', 'DOC', 'DOCX']]  # NEW
+        files_to_convert = [row for row in self.table_data if row[0] and row[1] in ['RTF', 'DOC', 'DOCX']]
         if not files_to_convert or not self.out_folder:
             self.thread_safe_message("error", "No checked RTF/DOC/DOCX files to convert.")
             return
 
-        rtf_count  = sum(1 for row in files_to_convert if row[1] == 'RTF')
-        doc_count  = sum(1 for row in files_to_convert if row[1] == 'DOC')   # NEW
+        rtf_count = sum(1 for row in files_to_convert if row[1] == 'RTF')
+        doc_count = sum(1 for row in files_to_convert if row[1] == 'DOC')
         docx_count = sum(1 for row in files_to_convert if row[1] == 'DOCX')
         self.thread_safe_log(f"Total {rtf_count} RTF, {doc_count} DOC, {docx_count} DOCX selected for conversion.")
         total = len(files_to_convert)
@@ -1061,7 +1143,7 @@ class TLFApp(QtWidgets.QWidget):
             try:
                 for idx, row in enumerate(files_to_convert):
                     ftype, fname = row[1], row[2]
-                    self.thread_safe_log(f"[{idx+1}/{total}] Processing: {fname} ({ftype} to PDF)")
+                    self.thread_safe_log(f"[{idx + 1}/{total}] Processing: {fname} ({ftype} to PDF)")
                     file_path = os.path.join(self.out_folder, fname)
                     pdf_path = convert_to_pdf_with_word(file_path, self.out_folder)
                     self.thread_safe_log(f"[Completed] {ftype} ➜ PDF: {os.path.basename(pdf_path)}")
@@ -1104,9 +1186,9 @@ class TLFApp(QtWidgets.QWidget):
             self.thread_safe_message("error", "No files selected.")
             return
 
-        rtf_count  = sum(1 for row in files_to_pack if row[1] == 'RTF')
-        doc_count  = sum(1 for row in files_to_pack if row[1] == 'DOC')   # NEW
-        pdf_count  = sum(1 for row in files_to_pack if row[1] == 'PDF')
+        rtf_count = sum(1 for row in files_to_pack if row[1] == 'RTF')
+        doc_count = sum(1 for row in files_to_pack if row[1] == 'DOC')
+        pdf_count = sum(1 for row in files_to_pack if row[1] == 'PDF')
         docx_count = sum(1 for row in files_to_pack if row[1] == 'DOCX')
         self.thread_safe_log(f"Total: {rtf_count} RTF, {doc_count} DOC, {pdf_count} PDF, {docx_count} DOCX selected.")
 
@@ -1119,10 +1201,10 @@ class TLFApp(QtWidgets.QWidget):
 
                 for idx, row in enumerate(files_to_pack):
                     ftype, fname, t1, t2, t3, bm = row[1:]
-                    self.thread_safe_log(f"[{idx+1}/{len(files_to_pack)}] Processing: {fname}")
+                    self.thread_safe_log(f"[{idx + 1}/{len(files_to_pack)}] Processing: {fname}")
                     file_path = os.path.join(self.out_folder, fname)
 
-                    if ftype in ['RTF', 'DOC', 'DOCX']:  # NEW
+                    if ftype in ['RTF', 'DOC', 'DOCX']:
                         pdf_path = convert_to_pdf_with_word(file_path, self.out_folder)
                         temp_pdfs.append(pdf_path)
                     else:
