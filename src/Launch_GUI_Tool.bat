@@ -24,7 +24,7 @@ if not exist "%PYTHON_EXE%" (
     exit /b 1
 )
 
-echo Launching Veristat TLF Packager using Python 2.7...
+echo Launching Veristat TLF Packager using Python ...
 "%PYTHON_EXE%" "%SCRIPT_PATH%"
 
 REM Optional: Keep console window open if script crashes
