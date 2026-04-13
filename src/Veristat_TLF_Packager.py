@@ -66,6 +66,44 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 CHECKED = '\u2611'   # ☑
 UNCHECKED = '\u2610' # ☐
 
+def get_unicode_font_path():
+    """Return a system font path that supports symbols like ≥, ≤, ± for TOC rendering."""
+    candidates = [
+        os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "arial.ttf"),
+        os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "calibri.ttf"),
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/Library/Fonts/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return ""
+
+
+def measure_text_width(text, font_size, font_path=""):
+    text = text or ""
+    if font_path:
+        try:
+            return fitz.Font(fontfile=font_path).text_length(text, fontsize=font_size)
+        except Exception:
+            pass
+    return fitz.get_text_length(text, fontsize=font_size)
+
+
+def insert_unicode_text(page, point, text, font_size, font_path="", color=(0, 0, 0)):
+    text = text or ""
+    if font_path:
+        try:
+            page.insert_font(fontname="F0", fontfile=font_path)
+            page.insert_text(point, text, fontsize=font_size, fontname="F0", color=color)
+            return
+        except Exception:
+            pass
+    page.insert_text(point, text, fontsize=font_size, color=color)
+
 # --- Extraction and helper functions ---
 # Pull top-level RTF header groups {...} from the \header block
 def extract_groups_from_rtf_header(rtf_text):
@@ -516,13 +554,13 @@ def parse_sort_key(bookmark):
     return (99, [0])
 
 # Soft-wrap a TOC title to fit a width at a given font size
-def wrap_toc_title(title, font_size, max_width):
+def wrap_toc_title(title, font_size, max_width, font_path=""):
     words = (title or "").split()
     lines = []
     current_line = ""
     for word in words:
         test_line = current_line + (" " if current_line else "") + word
-        if fitz.get_text_length(test_line, fontsize=font_size) <= max_width:
+        if measure_text_width(test_line, font_size, font_path) <= max_width:
             current_line = test_line
         else:
             if current_line:
@@ -534,6 +572,8 @@ def wrap_toc_title(title, font_size, max_width):
 
 # Prepend a multi-page TOC with dot leaders and clickable links to a bookmarked PDF
 def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
+    unicode_font_path = get_unicode_font_path()
+
     def extract_toc_entries(doc):
         return [(lvl, title.strip(), page_num - 1) for lvl, title, page_num in doc.get_toc(simple=True)]
 
@@ -545,7 +585,7 @@ def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
             level, title, target_page = entry
             indent = 20 * (level - 1)
             entry_max_width = toc_text_max_width - indent
-            wrapped_lines = wrap_toc_title(title, font_size, entry_max_width)
+            wrapped_lines = wrap_toc_title(title, font_size, entry_max_width, unicode_font_path)
             line_count = len(wrapped_lines)
             if current_line_count + line_count > lines_per_page:
                 paginated_entries.append(current_page_entries)
@@ -567,12 +607,13 @@ def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
             y = top_margin
             if page_index == 0:
                 toc_title = "Table of Contents"
-                title_width = fitz.get_text_length(toc_title, fontsize=font_size + 2)
-                page.insert_text(
+                title_width = measure_text_width(toc_title, font_size + 2, unicode_font_path)
+                insert_unicode_text(
+                    page,
                     (page_width / 2 - title_width / 2, y),
                     toc_title,
-                    fontsize=font_size + 2,
-                    fontname="Helvetica",
+                    font_size + 2,
+                    unicode_font_path,
                     color=(0, 0, 0)
                 )
                 y += font_size * 2
@@ -580,22 +621,21 @@ def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
                 indent = 20 * (level - 1)
                 x = left_margin + indent
                 page_number_str = str(target_page + toc_page_count + 1)
-                page_number_width_local = fitz.get_text_length(page_number_str, fontsize=font_size)
+                page_number_width_local = measure_text_width(page_number_str, font_size, unicode_font_path)
                 first_line_y = y
                 for i, line in enumerate(wrapped_lines):
-                    line_width = fitz.get_text_length(line, fontsize=font_size)
+                    line_width = measure_text_width(line, font_size, unicode_font_path)
                     if i == len(wrapped_lines) - 1:
-                        page.insert_text((x, y), line, fontsize=font_size)
+                        insert_unicode_text(page, (x, y), line, font_size, unicode_font_path)
                         dots_start_x = x + line_width + 2
                         if dots_start_x < page_number_x - page_number_width_local - gap:
                             dots_width = page_number_x - page_number_width_local - gap - dots_start_x
-                            dot_char_width = fitz.get_text_length('.', fontsize=font_size)
+                            dot_char_width = measure_text_width('.', font_size, unicode_font_path)
                             dot_count = int(dots_width // dot_char_width)
-                            page.insert_text((dots_start_x, y), '.' * dot_count, fontsize=font_size)
-                        page.insert_text((page_number_x - page_number_width_local, y),
-                                         page_number_str, fontsize=font_size)
+                            insert_unicode_text(page, (dots_start_x, y), '.' * dot_count, font_size, unicode_font_path)
+                        insert_unicode_text(page, (page_number_x - page_number_width_local, y), page_number_str, font_size, unicode_font_path)
                     else:
-                        page.insert_text((x, y), line, fontsize=font_size)
+                        insert_unicode_text(page, (x, y), line, font_size, unicode_font_path)
                     y += y_spacing
                 rect = fitz.Rect(x, first_line_y - font_size, page_number_x, y)
                 link_targets.append((page_index, rect, target_page))
@@ -607,7 +647,7 @@ def add_toc_and_links(bookmarked_pdf, final_pdf, font_size=8):
     width, height = fitz.paper_size("a4")
     left_margin, right_margin = 50, 60
     max_page_number = 99999
-    page_number_width = fitz.get_text_length(str(max_page_number), fontsize=font_size)
+    page_number_width = measure_text_width(str(max_page_number), font_size, unicode_font_path)
     page_number_x = width - right_margin
     gap = 8
     toc_text_max_width = page_number_x - left_margin - page_number_width - gap
